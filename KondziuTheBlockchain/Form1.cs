@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -19,19 +20,106 @@ namespace KondziuTheBlockchain
         public Form1()
         {
             InitializeComponent();
-            this.Text = "KondziuTheBlockchain - Proof of Work Demo";
-            button1.Text = "MINE THIS BLOCK!";
+            SetupForm();
+        }
+
+        private void SetupForm()
+        {
+            this.Text = "KondziuTheBlockchain - Proof of Work Mechanism";
+            button1.Text = "MINE THIS";
             button1.BackColor = Color.Crimson;
             button1.ForeColor = Color.White;
             button1.Font = new Font("Segoe UI", 10, FontStyle.Bold);
+
+            dataGridView1.BackgroundColor = Color.FromArgb(30, 30, 30);
+            dataGridView1.GridColor = Color.FromArgb(60, 60, 60);
+            dataGridView1.DefaultCellStyle.BackColor = Color.FromArgb(40, 40, 40);
+            dataGridView1.DefaultCellStyle.ForeColor = Color.White;
+            dataGridView1.ColumnHeadersDefaultCellStyle.BackColor = Color.RoyalBlue;
+            dataGridView1.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
+            dataGridView1.EnableHeadersVisualStyles = false;
+            dataGridView1.AllowUserToAddRows = false;
+            dataGridView1.ReadOnly = true;
+            dataGridView1.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            dataGridView1.RowHeadersVisible = false;
+            dataGridView1.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+
+            textBox3.Text = "1";     // Block ID
+            textBox4.Text = "0";     // Nonce
+            textBox2.Text = "waiting to mine...";
+        }
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog ofd = new OpenFileDialog())
+            {
+                ofd.Filter = "CSV Files (*.csv)|*.csv|All Files (*.*)|*.*";
+                ofd.Title = "Select Transactions CSV File";
+
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    LoadCsvToGrid(ofd.FileName);
+                }
+            }
+        }
+
+        private void LoadCsvToGrid(string filePath)
+        {
+            try
+            {
+                var lines = File.ReadAllLines(filePath);
+                if (lines.Length < 2)
+                {
+                    throw new Exception("CSV must have header + at least one row");
+                }
+
+                // Create DataTable with Transaction_ID
+                var dt = new DataTable();
+                dt.Columns.Add("Transaction_ID", typeof(int));
+                dt.Columns.Add("Date", typeof(string));
+                dt.Columns.Add("From", typeof(string));
+                dt.Columns.Add("To", typeof(string));
+                dt.Columns.Add("Amount", typeof(decimal));
+
+                for (int i = 1; i < lines.Length; i++) // skip header
+                {
+                    var parts = lines[i].Split(',');
+                    if (parts.Length < 4)
+                    {
+                        continue;
+                    }
+
+                    decimal amount = 0m;
+                    decimal.TryParse(
+                        parts[4].Trim(),
+                        System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out amount);
+
+                    dt.Rows.Add(
+                        int.TryParse(parts[0].Trim(), out int id) ? id : i,   // use CSV ID or fallback to row number
+                        parts[1].Trim(),   // Date
+                        parts[2].Trim(),   // From
+                        parts[3].Trim(),   // To
+                        amount             // Amount → now correctly parsed!
+                    );
+                }
+
+                dataGridView1.DataSource = dt;
+                this.Text = $"KondziuTheBlockchain – {dt.Rows.Count} transactions loaded – Ready to mine!";
+                MessageBox.Show($"Successfully loaded {dt.Rows.Count} transactions!", "Loaded",
+                                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error loading CSV:\n" + ex.Message, "Error",
+                                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void Form1_Load(object sender, EventArgs e)
         {
             textBox3.Text = "1";
-            textBox5.Text = "0";
-            textBox1.Text = "Tutaj daj tekst";
-            textBox4.Text = "0";
             textBox2.Text = "waiting to mine...";
         }
 
@@ -60,6 +148,11 @@ namespace KondziuTheBlockchain
 
         }
 
+        private void dataGridView1_CellContentClick(object sender, DataGridViewCellEventArgs e)
+        {
+
+        }
+
         private void button1_Click(object sender, EventArgs e)
         {
             if (button1.Text == "STOP MINING")
@@ -68,20 +161,33 @@ namespace KondziuTheBlockchain
                 return;
             }
 
-            // === Read values from your textboxes ===
-            string blockId = textBox3.Text.Trim();           // Block ID
-            string data = textBox1.Text.Trim();           // Data
-            string previousHash = "0000000000000000000000000000000000000000000000000000000000000000"; // genesis
-            if (!string.IsNullOrEmpty(textBox2.Text) && textBox2.Text.Length == 64)
-                previousHash = textBox2.Text; // use last hash if exists
-
-            if (!int.TryParse(textBox5.Text, out int difficulty) || difficulty < 1 || difficulty > 10)
+            // Validation
+            if (dataGridView1.Rows.Count == 0)
             {
-                MessageBox.Show("Difficulty must be 1–10", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Load a CSV file first!", "No data", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            // === Setup mining ===
+            if (!int.TryParse(textBox5.Text, out int difficulty) || difficulty < 1 || difficulty > 12)
+            {
+                MessageBox.Show("Difficulty must be 1–12", "Invalid", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            //Tu dane z textboxow
+            string blockId = textBox3.Text.Trim();
+            string previousHash = string.IsNullOrWhiteSpace(textBox2.Text) || textBox2.Text == "waiting to mine..."
+                ? new string('0', 64)
+                : textBox2.Text;
+
+            // Robimy dane z tabeli do hashowania
+            string data = "";
+            int txId = 1;
+            foreach (DataRow row in ((DataTable)dataGridView1.DataSource).Rows)
+            {
+                data += $"{txId++}|{row["Date"]}|{row["From"]}|{row["To"]}|{row["Amount"]}\n";
+            }
+
             cts = new CancellationTokenSource();
             uint nonce = 0;
             string target = new string('0', difficulty);
@@ -101,13 +207,13 @@ namespace KondziuTheBlockchain
                     nonce++;
                     textBox4.Text = nonce.ToString();
 
-                    // === Real Bitcoin-style block header (simplified but authentic) ===
+                    // The header to be hashed ( czyli to co hashujemy i szukamy zer )
                     string header = blockId + previousHash + data + nonce.ToString();
 
-                    // DOUBLE SHA-256 — exactly like Bitcoin!
-                    string hash = Sha256BitLevel.ComputeHash(
-                                    Sha256BitLevel.ComputeHash(header));
+                    // DOUBLE SHA-256
+                    string hash = Sha256BitLevel.ComputeHash(Sha256BitLevel.ComputeHash(header));
 
+                    // Dashboard
                     textBox2.Text = hash;
                     if (nonce % 500 == 0)
                     {

@@ -1,1 +1,2 @@
-# The-Block-and-The-Miner
+# TheGoatedBC
+what to say more, a blockchain.
